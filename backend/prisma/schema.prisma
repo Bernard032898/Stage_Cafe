@@ -32,14 +32,13 @@ model User {
 
   passwordHash String
 
+  isActive Boolean @default(true)
 
   roleId String @db.Uuid
 
   role Role @relation(fields: [roleId], references: [id])
 
-
   orders Order[]
-
 
   createdAt DateTime @default(now())
 
