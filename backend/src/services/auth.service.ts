@@ -34,19 +34,27 @@ export async function login(
     );
   }
 
+  const jwtSecret = process.env.JWT_SECRET;
+
+  if (!jwtSecret) {
+    throw new Error("JWT_SECRET is not configured");
+  }
+
   const token = jwt.sign(
     {
       userId: user.id,
       role: user.role.name
     },
-    process.env.JWT_SECRET as string,
+    jwtSecret,
     {
       expiresIn: "1d"
     }
   );
 
+  const { passwordHash, ...userWithoutPassword } = user;
+
   return {
     token,
-    user
+    user: userWithoutPassword
   };
 }
