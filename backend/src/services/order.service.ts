@@ -68,59 +68,68 @@ export async function createOrder(body: any) {
 
   const tableId = table.id;
 
-  let total = 0;
-  const items: Array<{ productId: string; quantity: number; price: number }> = [];
+  return prisma.$transaction(async (tx) => {
+    let total = 0;
+    const items: Array<{ productId: string; quantity: number; price: number }> = [];
 
-  for (const item of body.items) {
-    if (!item.productId) {
-      throw new Error("Each item must include productId");
+    for (const item of body.items) {
+      if (!item.productId) {
+        throw new Error("Each item must include productId");
+      }
+
+      const quantity = Number(item.quantity ?? 1);
+
+      if (Number.isNaN(quantity) || quantity <= 0) {
+        throw new Error("Each item quantity must be a positive number");
+      }
+
+      const product = await tx.product.findUnique({
+        where: { id: item.productId },
+      });
+
+      if (!product) {
+        throw new Error(`Product not found: ${item.productId}`);
+      }
+
+      if (Number(product.stock) < quantity) {
+        throw new Error(`Insufficient stock for ${product.name}`);
+      }
+
+      const price = Number(product.price);
+      total += price * quantity;
+
+      await tx.product.update({
+        where: { id: product.id },
+        data: { stock: Number(product.stock) - quantity },
+      });
+
+      items.push({
+        productId: product.id,
+        quantity,
+        price,
+      });
     }
 
-    const quantity = Number(item.quantity ?? 1);
-
-    if (Number.isNaN(quantity) || quantity <= 0) {
-      throw new Error("Each item quantity must be a positive number");
-    }
-
-    const product = await prisma.product.findUnique({
-      where: {
-        id: item.productId,
-      },
-    });
-
-    if (!product) {
-      throw new Error(`Product not found: ${item.productId}`);
-    }
-
-    const price = Number(product.price);
-    total += price * quantity;
-
-    items.push({
-      productId: product.id,
-      quantity,
-      price,
-    });
-  }
-
-  return prisma.order.create({
-    data: {
-      orderNumber: `SC-${Date.now()}`,
-      userId: body.userId,
-      tableId,
-      total,
-      items: {
-        create: items,
-      },
-    },
-    include: {
-      user: true,
-      table: true,
-      items: {
-        include: {
-          product: true,
+    return tx.order.create({
+      data: {
+        orderNumber: `SC-${Date.now()}`,
+        userId: body.userId,
+        tableId,
+        total,
+        items: {
+          create: items,
         },
       },
-    },
+      include: {
+        user: true,
+        table: true,
+        items: {
+          include: {
+            product: true,
+          },
+        },
+      },
+    });
   });
 }
 
@@ -139,7 +148,7 @@ export async function createMultipleOrders(body: any) {
     throw new Error("User not found");
   }
 
-  const createOps: any[] = [];
+  const results: any[] = [];
 
   for (let i = 0; i < body.orders.length; i++) {
     const ord = body.orders[i];
@@ -165,34 +174,43 @@ export async function createMultipleOrders(body: any) {
 
     const tableId = table.id;
 
-    let total = 0;
-    const items: Array<{ productId: string; quantity: number; price: number }> = [];
+    const result = await prisma.$transaction(async (tx) => {
+      let total = 0;
+      const items: Array<{ productId: string; quantity: number; price: number }> = [];
 
-    for (const item of ord.items) {
-      if (!item.productId) {
-        throw new Error("Each item must include productId");
+      for (const item of ord.items) {
+        if (!item.productId) {
+          throw new Error("Each item must include productId");
+        }
+
+        const quantity = Number(item.quantity ?? 1);
+
+        if (Number.isNaN(quantity) || quantity <= 0) {
+          throw new Error("Each item quantity must be a positive number");
+        }
+
+        const product = await tx.product.findUnique({ where: { id: item.productId } });
+
+        if (!product) {
+          throw new Error(`Product not found: ${item.productId}`);
+        }
+
+        if (Number(product.stock) < quantity) {
+          throw new Error(`Insufficient stock for ${product.name}`);
+        }
+
+        const price = Number(product.price);
+        total += price * quantity;
+
+        await tx.product.update({
+          where: { id: product.id },
+          data: { stock: Number(product.stock) - quantity },
+        });
+
+        items.push({ productId: product.id, quantity, price });
       }
 
-      const quantity = Number(item.quantity ?? 1);
-
-      if (Number.isNaN(quantity) || quantity <= 0) {
-        throw new Error("Each item quantity must be a positive number");
-      }
-
-      const product = await prisma.product.findUnique({ where: { id: item.productId } });
-
-      if (!product) {
-        throw new Error(`Product not found: ${item.productId}`);
-      }
-
-      const price = Number(product.price);
-      total += price * quantity;
-
-      items.push({ productId: product.id, quantity, price });
-    }
-
-    createOps.push(
-      prisma.order.create({
+      return tx.order.create({
         data: {
           orderNumber: `SC-${Date.now()}-${i}`,
           userId: body.userId,
@@ -205,11 +223,11 @@ export async function createMultipleOrders(body: any) {
           table: true,
           items: { include: { product: true } },
         },
-      })
-    );
-  }
+      });
+    });
 
-  const results = await prisma.$transaction(createOps);
+    results.push(result);
+  }
 
   return results;
 }
@@ -218,6 +236,18 @@ export async function markOrderComplete(orderId: string) {
   return prisma.order.update({
     where: { id: orderId },
     data: { isCompleted: true },
+    include: {
+      user: true,
+      table: true,
+      items: { include: { product: true } },
+    },
+  });
+}
+
+export async function cancelOrder(orderId: string) {
+  return prisma.order.update({
+    where: { id: orderId },
+    data: { isCancelled: true },
     include: {
       user: true,
       table: true,
@@ -243,10 +273,54 @@ export async function getIncome(period: "day" | "month" | "year") {
     where: {
       createdAt: { gte: start },
       isCompleted: true,
+      isCancelled: false,
     },
   });
 
   const total = agg._sum.total ? Number(agg._sum.total) : 0;
 
   return { period, total };
+}
+
+export async function getTopProducts(period: "day" | "month" | "year") {
+  const now = new Date();
+  let start: Date;
+
+  if (period === "day") {
+    start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  } else if (period === "month") {
+    start = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else {
+    start = new Date(now.getFullYear(), 0, 1);
+  }
+
+  const orders = await prisma.order.findMany({
+    where: {
+      createdAt: { gte: start },
+      isCompleted: true,
+      isCancelled: false,
+    },
+    include: {
+      items: {
+        include: {
+          product: true,
+        },
+      },
+    },
+  });
+
+  const counts = new Map<string, { name: string; quantity: number }>();
+
+  for (const order of orders) {
+    for (const item of order.items) {
+      const current = counts.get(item.productId) || { name: item.product?.name || "Unknown", quantity: 0 };
+      current.quantity += item.quantity;
+      counts.set(item.productId, current);
+    }
+  }
+
+  return Array.from(counts.entries())
+    .map(([productId, entry]) => ({ productId, name: entry.name, quantity: entry.quantity }))
+    .sort((a, b) => b.quantity - a.quantity)
+    .slice(0, 5);
 }

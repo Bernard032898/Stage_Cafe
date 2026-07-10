@@ -1,13 +1,8 @@
 import { Request, Response } from "express";
 import * as orderService from "../services/order.service";
 
-export async function getAllOrders(
-  req: Request,
-  res: Response
-) {
-  const orders =
-    await orderService.getOrders();
-
+export async function getAllOrders(req: Request, res: Response) {
+  const orders = await orderService.getOrders();
   res.json(orders);
 }
 
@@ -92,6 +87,20 @@ export async function completeOrder(req: Request, res: Response) {
   }
 }
 
+export async function cancelOrder(req: Request, res: Response) {
+  const idValue = req.params.id;
+  const id = Array.isArray(idValue) ? idValue[0] : idValue;
+  if (!id) return res.status(400).json({ message: "Order id required" });
+
+  try {
+    const order = await orderService.cancelOrder(id);
+    return res.json(order);
+  } catch (err: any) {
+    console.error("Cancel order failed:", err);
+    return res.status(400).json({ message: err?.message || "Unable to cancel order" });
+  }
+}
+
 export async function getTables(req: Request, res: Response) {
   try {
     const tables = await orderService.getCafeTables();
@@ -122,5 +131,28 @@ export async function getIncome(req: Request, res: Response) {
   } catch (err: any) {
     console.error("Get income failed:", err);
     return res.status(400).json({ message: err?.message || "Unable to get income" });
+  }
+}
+
+export async function getTopProducts(req: Request, res: Response) {
+  const periodValue = req.query.period;
+  let period = "day";
+
+  if (typeof periodValue === "string") {
+    period = periodValue;
+  } else if (Array.isArray(periodValue) && typeof periodValue[0] === "string") {
+    period = periodValue[0];
+  }
+
+  if (!["day", "month", "year"].includes(period)) {
+    return res.status(400).json({ message: "Invalid period, expected day|month|year" });
+  }
+
+  try {
+    const stats = await orderService.getTopProducts(period as "day" | "month" | "year");
+    return res.json(stats);
+  } catch (err: any) {
+    console.error("Get top products failed:", err);
+    return res.status(400).json({ message: err?.message || "Unable to get top products" });
   }
 }

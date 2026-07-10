@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from "react";
-import { fetchOrders, completeOrder } from "../services/api";
+import { fetchOrders, completeOrder, cancelOrder } from "../services/api";
 import Stats from "./Stats";
 import { getProductImageUrl, getFallbackProductImageUrl } from "../utils/productImage";
 
 export default function OrdersList() {
   const [orders, setOrders] = useState<any[]>([]);
-  const [filter, setFilter] = useState<"all" | "pending" | "completed">("all");
+  const [filter, setFilter] = useState<"all" | "pending" | "completed" | "cancelled">("all");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -30,8 +30,22 @@ export default function OrdersList() {
 
   const filteredOrders = orders.filter((order) => {
     if (filter === "all") return true;
-    return filter === "completed" ? order.isCompleted : !order.isCompleted;
+    if (filter === "cancelled") return order.isCancelled;
+    if (filter === "completed") return order.isCompleted && !order.isCancelled;
+    return !order.isCompleted && !order.isCancelled;
   });
+
+  async function handleCancel(orderId: string) {
+    if (!confirm("Cancel this order?")) return;
+    try {
+      await cancelOrder(orderId);
+      window.dispatchEvent(new CustomEvent('orders.created'));
+      load();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to cancel order');
+    }
+  }
 
   return (
     <div>
@@ -46,6 +60,7 @@ export default function OrdersList() {
             <option value="all">All Orders</option>
             <option value="pending">In Progress</option>
             <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
           </select>
           <button onClick={load}>Refresh</button>
         </div>
@@ -69,8 +84,8 @@ export default function OrdersList() {
                   <strong>{o.orderNumber}</strong>
                   <div className="muted small">{new Date(o.createdAt).toLocaleString()}</div>
                 </div>
-                <div className={`status-badge ${o.isCompleted ? "completed" : "pending"}`}>
-                  {o.isCompleted ? "Completed" : "Pending"}
+                <div className={`status-badge ${o.isCancelled ? "cancelled" : o.isCompleted ? "completed" : "pending"}`}>
+                  {o.isCancelled ? "Cancelled" : o.isCompleted ? "Completed" : "Pending"}
                 </div>
               </div>
 
@@ -88,20 +103,27 @@ export default function OrdersList() {
                 ))}
               </div>
 
-              {!o.isCompleted && (
-                <button className="complete-button" onClick={async () => {
-                  try {
-                    await completeOrder(o.id);
-                    window.dispatchEvent(new CustomEvent('orders.created'));
-                    load();
-                  } catch (err) {
-                    console.error(err);
-                    alert('Failed to complete order');
-                  }
-                }}>
-                  Mark Complete
-                </button>
-              )}
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                {!o.isCompleted && !o.isCancelled && (
+                  <>
+                    <button className="complete-button" onClick={async () => {
+                      try {
+                        await completeOrder(o.id);
+                        window.dispatchEvent(new CustomEvent('orders.created'));
+                        load();
+                      } catch (err) {
+                        console.error(err);
+                        alert('Failed to complete order');
+                      }
+                    }} style={{ flex: 1 }}>
+                      Mark Complete
+                    </button>
+                    <button className="secondary-button" onClick={() => handleCancel(o.id)} style={{ flex: 1 }}>
+                      Cancel
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         ))}

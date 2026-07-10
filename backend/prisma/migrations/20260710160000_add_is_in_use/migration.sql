@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "CafeTable" ADD COLUMN "isInUse" BOOLEAN NOT NULL DEFAULT false;

@@ -66,6 +66,8 @@ model Product {
 
   price Decimal
 
+  stock Int @default(0)
+
 
   categoryId String @db.Uuid
 
@@ -85,6 +87,7 @@ model CafeTable {
 
   tableNumber Int @unique
 
+  isInUse Boolean @default(false)
 
   orders Order[]
 
@@ -118,6 +121,8 @@ model Order {
   total Decimal
 
   isCompleted Boolean @default(false)
+
+  isCancelled Boolean @default(false)
 
   createdAt DateTime @default(now())
 

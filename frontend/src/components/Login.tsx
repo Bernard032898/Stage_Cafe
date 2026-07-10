@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { setAuth, login } from "../services/api";
 
-export default function Login({ onLogin }: { onLogin: (a: { token: string; userId: string }) => void }) {
+export default function Login({ onLogin }: { onLogin: (a: { token: string; userId: string; user?: any }) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -14,9 +14,12 @@ export default function Login({ onLogin }: { onLogin: (a: { token: string; userI
       const res = await login(email, password); // { token, user }
       const token = res.token;
       const userId = res.user?.id;
+      const role = res.user?.role?.name || res.role || "";
       if (!token || !userId) throw new Error("Invalid login response");
-      setAuth(token, userId);
-      onLogin({ token, userId });
+
+      const session = { token, userId, user: res.user, role };
+      setAuth(session);
+      onLogin(session);
     } catch (err: any) {
       console.error(err);
       alert(err?.response?.data?.message || err?.message || "Login failed");
