@@ -1,5 +1,8 @@
 # REST API Documentation
 
+Backend - running on render
+front end - running on vercel 
+
 Base URL
 
 /api
